@@ -50,10 +50,10 @@ function twilioDirectPlugin(): Plugin {
             });
 
             const mode = params.get('mode') || (req.url?.includes('Calls') || req.url?.includes('call') ? 'call' : 'sms');
-            const to = params.get('To') || '+919180420603';
-            const from = params.get('From') || '+919180420603';
+            const to = params.get('To') || process.env.VITE_USER_PHONE_NUMBER || '+919180420603';
+            const from = params.get('From') || process.env.VITE_TWILIO_PHONE_NUMBER || '+17372508034';
             const body = params.get('Body') || 'DocTalk Emergency Assistance Alert';
-            const twiml = params.get('Twiml') || '<Response><Say voice="alice">DocTalk Emergency Medical Assistance. Connecting you with Dr. Anita Rao.</Say></Response>';
+            const twiml = params.get('Twiml') || '<Response><Say voice="alice" language="en-IN">DocTalk Emergency Medical Assistance. Connecting you with Dr. Anita Rao.</Say></Response>';
             const accountSid = params.get('AccountSid') || process.env.VITE_TWILIO_ACCOUNT_SID || '';
             const authToken = params.get('AuthToken') || process.env.VITE_TWILIO_AUTH_TOKEN || '';
 
@@ -62,42 +62,46 @@ function twilioDirectPlugin(): Plugin {
             let twilioStatus = '';
             let twilioErrorNotice = '';
 
-            // Only attempt external Twilio call if AuthToken is distinct from AccountSid
-            if (accountSid && authToken && authToken !== accountSid && authToken.length >= 20) {
-              try {
-                const endpoint = mode === 'call'
-                  ? `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls.json`
-                  : `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
+            // Attempt live Twilio API dispatch if AccountSid and AuthToken are provided
+            if (accountSid && authToken) {
+              if (authToken === accountSid) {
+                twilioErrorNotice = 'Twilio Auth Token is currently set to your Account SID. To enable live carrier phone ringing and SMS, enter your 32-character Auth Token from the Twilio Console (twilio.com/console).';
+              } else {
+                try {
+                  const endpoint = mode === 'call'
+                    ? `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls.json`
+                    : `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
 
-                const twilioForm = new URLSearchParams();
-                twilioForm.append('To', to);
-                twilioForm.append('From', from);
-                if (mode === 'call') {
-                  twilioForm.append('Twiml', twiml);
-                } else {
-                  twilioForm.append('Body', body);
+                  const twilioForm = new URLSearchParams();
+                  twilioForm.append('To', to);
+                  twilioForm.append('From', from);
+                  if (mode === 'call') {
+                    twilioForm.append('Twiml', twiml);
+                  } else {
+                    twilioForm.append('Body', body);
+                  }
+
+                  const twilioRes = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': 'Basic ' + Buffer.from(`${accountSid}:${authToken}`).toString('base64'),
+                      'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: twilioForm.toString()
+                  });
+
+                  if (twilioRes.ok) {
+                    const data = (await twilioRes.json()) as any;
+                    twilioSuccess = true;
+                    twilioSid = data.sid;
+                    twilioStatus = data.status;
+                  } else {
+                    const errData = (await twilioRes.json().catch(() => ({}))) as any;
+                    twilioErrorNotice = errData.message || `Twilio error status ${twilioRes.status}`;
+                  }
+                } catch (err: any) {
+                  twilioErrorNotice = err?.message || 'Twilio connection error';
                 }
-
-                const twilioRes = await fetch(endpoint, {
-                  method: 'POST',
-                  headers: {
-                    'Authorization': 'Basic ' + Buffer.from(`${accountSid}:${authToken}`).toString('base64'),
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                  },
-                  body: twilioForm.toString()
-                });
-
-                if (twilioRes.ok) {
-                  const data = (await twilioRes.json()) as any;
-                  twilioSuccess = true;
-                  twilioSid = data.sid;
-                  twilioStatus = data.status;
-                } else {
-                  const errData = (await twilioRes.json().catch(() => ({}))) as any;
-                  twilioErrorNotice = errData.message || `Twilio error status ${twilioRes.status}`;
-                }
-              } catch (err: any) {
-                twilioErrorNotice = err?.message || 'Twilio connection error';
               }
             }
 

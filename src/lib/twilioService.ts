@@ -37,13 +37,26 @@ export const formatPhoneNumber = (phone: string): string => {
   return `+${cleaned}`;
 };
 
+export const DEFAULT_TWILIO_PHONE = '+17372508034';
+export const DEFAULT_USER_PHONE = '+919180420603';
+
 export const getTwilioConfig = () => {
   const accountSid = localStorage.getItem('doctalk_twilio_account_sid') || import.meta.env.VITE_TWILIO_ACCOUNT_SID || '';
   const authToken = localStorage.getItem('doctalk_twilio_auth_token') || import.meta.env.VITE_TWILIO_AUTH_TOKEN || '';
-  const rawPhone = localStorage.getItem('doctalk_twilio_phone') || import.meta.env.VITE_TWILIO_PHONE_NUMBER || '+919180420603';
+
+  // Clean up any old erroneously saved Indian destination number as the Twilio caller ID
+  let storedTwilioPhone = localStorage.getItem('doctalk_twilio_phone');
+  if (storedTwilioPhone === '+919180420603' || storedTwilioPhone === '9180420603') {
+    localStorage.removeItem('doctalk_twilio_phone');
+    storedTwilioPhone = null;
+  }
+
+  const rawPhone = storedTwilioPhone || import.meta.env.VITE_TWILIO_PHONE_NUMBER || DEFAULT_TWILIO_PHONE;
   const fromPhone = rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`;
+
   // User's registered number that receives the call and SMS
-  const registeredNumber = fromPhone;
+  const rawRegisteredPhone = localStorage.getItem('doctalk_twilio_registered_phone') || import.meta.env.VITE_USER_PHONE_NUMBER || DEFAULT_USER_PHONE;
+  const registeredNumber = rawRegisteredPhone.startsWith('+') ? rawRegisteredPhone : `+${rawRegisteredPhone}`;
 
   // Real carrier mode is active when auth token is distinct from account SID
   const isCarrierMode = Boolean(authToken && authToken !== accountSid && authToken.length >= 20);
@@ -53,15 +66,21 @@ export const getTwilioConfig = () => {
     authToken,
     fromPhone,
     registeredNumber,
-    isConfigured: Boolean(accountSid && authToken && fromPhone),
+    isConfigured: Boolean(accountSid && authToken && fromPhone && registeredNumber),
     isCarrierMode
   };
 };
 
-export const saveTwilioConfig = (config: { accountSid?: string; authToken?: string; phone?: string }) => {
-  if (config.accountSid) localStorage.setItem('doctalk_twilio_account_sid', config.accountSid.trim());
-  if (config.authToken) localStorage.setItem('doctalk_twilio_auth_token', config.authToken.trim());
-  if (config.phone) localStorage.setItem('doctalk_twilio_phone', config.phone.trim());
+export const saveTwilioConfig = (config: {
+  accountSid?: string;
+  authToken?: string;
+  phone?: string;
+  registeredPhone?: string;
+}) => {
+  if (config.accountSid !== undefined) localStorage.setItem('doctalk_twilio_account_sid', config.accountSid.trim());
+  if (config.authToken !== undefined) localStorage.setItem('doctalk_twilio_auth_token', config.authToken.trim());
+  if (config.phone !== undefined) localStorage.setItem('doctalk_twilio_phone', config.phone.trim());
+  if (config.registeredPhone !== undefined) localStorage.setItem('doctalk_twilio_registered_phone', config.registeredPhone.trim());
 };
 
 // Direct Device Actions (opens phone dialer or SMS app with 0 friction)
@@ -86,7 +105,7 @@ export const getSmsHistory = (): TwilioMessageRecord[] => {
           id: 'sms-init-1',
           sid: 'SM_tw_7821a',
           to: '+919180420603',
-          from: '+919180420603',
+          from: '+17372508034',
           body: 'DocTalk Alert: Dr. Anita Rao will call +91 9180420603 within 15 minutes. Reference ID: DOC-7821.',
           status: 'delivered',
           timestamp: new Date(Date.now() - 1000 * 60 * 15).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -125,7 +144,7 @@ export const getCallHistory = (): TwilioCallRecord[] => {
           id: 'call-init-1',
           sid: 'CA_tw_9841b',
           to: '+919180420603',
-          from: '+919180420603',
+          from: '+17372508034',
           speechText: 'DocTalk Medical Assistance Dispatch: Dr. Anita Rao callback connected. Patient triage verified.',
           status: 'completed',
           durationSeconds: 42,

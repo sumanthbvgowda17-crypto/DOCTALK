@@ -40,7 +40,7 @@ export const ConnectionSimulatorPage: React.FC = () => {
     }
   ]);
 
-  const [smsPhoneDemo, setSmsPhoneDemo] = useState('+91 98450 12345');
+  const [smsPhoneDemo, setSmsPhoneDemo] = useState('+91 9180420603');
   const [smsTriggered, setSmsTriggered] = useState(false);
 
   const networkProfiles: Record<

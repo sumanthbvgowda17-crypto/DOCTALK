@@ -38,13 +38,15 @@ import {
 
 export const AssistanceDashboardPage: React.FC = () => {
   const config = getTwilioConfig();
+  const fromPhone = config.fromPhone;
   const registeredNumber = config.registeredNumber;
 
   // Settings / Credentials drawer state
   const [showConfig, setShowConfig] = useState(false);
   const [inputSid, setInputSid] = useState(config.accountSid);
   const [inputAuthToken, setInputAuthToken] = useState(config.authToken);
-  const [inputPhone, setInputPhone] = useState(config.registeredNumber);
+  const [inputTwilioPhone, setInputTwilioPhone] = useState(config.fromPhone);
+  const [inputRegisteredPhone, setInputRegisteredPhone] = useState(config.registeredNumber);
   const [configNotice, setConfigNotice] = useState<string | null>(null);
 
   // SMS State
@@ -67,14 +69,16 @@ export const AssistanceDashboardPage: React.FC = () => {
   const [smsHistory, setSmsHistory] = useState<TwilioMessageRecord[]>(getSmsHistory);
   const [callHistory, setCallHistory] = useState<TwilioCallRecord[]>(getCallHistory);
   const [activeTab, setActiveTab] = useState<'all' | 'calls' | 'sms'>('all');
-  const [copiedNumber, setCopiedNumber] = useState(false);
+  const [copiedTwilioNumber, setCopiedTwilioNumber] = useState(false);
+  const [copiedUserNumber, setCopiedUserNumber] = useState(false);
 
   const handleSaveCredentials = (e: React.FormEvent) => {
     e.preventDefault();
     saveTwilioConfig({
       accountSid: inputSid,
       authToken: inputAuthToken,
-      phone: inputPhone
+      phone: inputTwilioPhone,
+      registeredPhone: inputRegisteredPhone
     });
     setConfigNotice('Twilio credentials saved successfully! Line parameters updated.');
     setTimeout(() => {
@@ -103,10 +107,16 @@ export const AssistanceDashboardPage: React.FC = () => {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleCopyNumber = () => {
+  const handleCopyTwilioNumber = () => {
+    navigator.clipboard.writeText(fromPhone);
+    setCopiedTwilioNumber(true);
+    setTimeout(() => setCopiedTwilioNumber(false), 2000);
+  };
+
+  const handleCopyUserNumber = () => {
     navigator.clipboard.writeText(registeredNumber);
-    setCopiedNumber(true);
-    setTimeout(() => setCopiedNumber(false), 2000);
+    setCopiedUserNumber(true);
+    setTimeout(() => setCopiedUserNumber(false), 2000);
   };
 
   // ─── Trigger Call Assistance ───
@@ -123,11 +133,21 @@ export const AssistanceDashboardPage: React.FC = () => {
       setCallActive(true);
       setCallHistory(getCallHistory());
 
-      setCallFeedback({
-        type: 'success',
-        message: `Call Assistance initiated! Dialing Twilio registered number ${registeredNumber}...`,
-        sid: res.record.sid
-      });
+      if (res.twilioVerified) {
+        setCallFeedback({
+          type: 'success',
+          message: `Twilio Outbound Call Connected! Twilio line ${fromPhone} is dialing your phone ${registeredNumber}. Answer the incoming call to hear the voice medical triage.`,
+          sid: res.record.sid
+        });
+      } else {
+        setCallFeedback({
+          type: 'success',
+          message: res.error
+            ? `Call Assistance active: Voice synthesized in browser (${res.error})`
+            : `Call Assistance initiated from Twilio ${fromPhone} to ${registeredNumber}! Speaking voice message.`,
+          sid: res.record.sid
+        });
+      }
     } catch (err: any) {
       setCallFeedback({
         type: 'error',
@@ -165,11 +185,21 @@ export const AssistanceDashboardPage: React.FC = () => {
 
       setSmsHistory(getSmsHistory());
 
-      setSmsFeedback({
-        type: 'success',
-        message: `SMS Alert successfully sent to Twilio registered number ${registeredNumber}!`,
-        sid: res.record.sid
-      });
+      if (res.twilioVerified) {
+        setSmsFeedback({
+          type: 'success',
+          message: `SMS Alert successfully delivered via Twilio line ${fromPhone} to your registered phone ${registeredNumber}!`,
+          sid: res.record.sid
+        });
+      } else {
+        setSmsFeedback({
+          type: 'success',
+          message: res.error
+            ? `SMS recorded in dispatch queue (${res.error})`
+            : `SMS Alert dispatched from Twilio ${fromPhone} to your phone ${registeredNumber}!`,
+          sid: res.record.sid
+        });
+      }
     } catch (err: any) {
       setSmsFeedback({
         type: 'error',
@@ -233,24 +263,49 @@ export const AssistanceDashboardPage: React.FC = () => {
                   Twilio Live Dispatch
                 </span>
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border border-neutral-300 dark:border-neutral-700">
-                  Target: {registeredNumber}
+                  Twilio: {fromPhone} → {registeredNumber}
                 </span>
               </div>
               <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-1 max-w-2xl leading-relaxed">
-                Dedicated emergency dispatch desk. Click <strong>Call Assistance</strong> or <strong>Dial on Phone Directly</strong> to connect instantly, or send priority <strong>SMS Alerts</strong> directly to your number.
+                Dedicated emergency dispatch desk. Placing calls or sending alerts triggers outbound voice & SMS via Twilio line <strong>{fromPhone}</strong> directly to your phone <strong>{registeredNumber}</strong>.
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            {/* Registered Destination Display */}
-            <div className="flex items-center gap-3 bg-neutral-100/90 dark:bg-neutral-800/80 px-3.5 py-2.5 rounded-2xl border border-neutral-200 dark:border-neutral-700">
-              <div className="w-8 h-8 rounded-xl bg-neutral-900 dark:bg-white text-white dark:text-black flex items-center justify-center shrink-0 font-bold">
-                <Smartphone className="w-4 h-4" />
+            {/* Twilio Outbound Line Display */}
+            <div className="flex items-center gap-2.5 bg-neutral-100/90 dark:bg-neutral-800/80 px-3 py-2 rounded-2xl border border-neutral-200 dark:border-neutral-700">
+              <div className="w-7 h-7 rounded-lg bg-neutral-900 dark:bg-white text-white dark:text-black flex items-center justify-center shrink-0 font-bold">
+                <PhoneCall className="w-3.5 h-3.5" />
               </div>
               <div>
                 <span className="text-[9px] uppercase font-bold tracking-wider text-neutral-400 block">
-                  Twilio Registered Number:
+                  Twilio Outbound Line:
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono text-xs font-extrabold text-neutral-900 dark:text-white">
+                    {fromPhone}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleCopyTwilioNumber}
+                    className="text-neutral-400 hover:text-neutral-900 dark:hover:text-white transition-colors p-0.5"
+                    title="Copy Twilio caller number"
+                  >
+                    {copiedTwilioNumber ? <CheckCircle2 className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Registered Destination Display */}
+            <div className="flex items-center gap-2.5 bg-neutral-100/90 dark:bg-neutral-800/80 px-3 py-2 rounded-2xl border border-neutral-200 dark:border-neutral-700">
+              <div className="w-7 h-7 rounded-lg bg-neutral-900 dark:bg-white text-white dark:text-black flex items-center justify-center shrink-0 font-bold">
+                <Smartphone className="w-3.5 h-3.5" />
+              </div>
+              <div>
+                <span className="text-[9px] uppercase font-bold tracking-wider text-neutral-400 block">
+                  Your Phone (Recipient):
                 </span>
                 <div className="flex items-center gap-1.5">
                   <span className="font-mono text-xs font-extrabold text-neutral-900 dark:text-white">
@@ -258,11 +313,11 @@ export const AssistanceDashboardPage: React.FC = () => {
                   </span>
                   <button
                     type="button"
-                    onClick={handleCopyNumber}
-                    className="text-neutral-400 hover:text-neutral-900 dark:hover:text-white transition-colors p-1"
-                    title="Copy registered number"
+                    onClick={handleCopyUserNumber}
+                    className="text-neutral-400 hover:text-neutral-900 dark:hover:text-white transition-colors p-0.5"
+                    title="Copy your phone number"
                   >
-                    {copiedNumber ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                    {copiedUserNumber ? <CheckCircle2 className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
                   </button>
                 </div>
               </div>
@@ -272,11 +327,11 @@ export const AssistanceDashboardPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setShowConfig(prev => !prev)}
-              className="flex items-center gap-1.5 px-3.5 py-3 rounded-2xl bg-neutral-100/90 hover:bg-neutral-200/90 dark:bg-neutral-800/80 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 text-xs font-bold border border-neutral-200 dark:border-neutral-700 transition-colors cursor-pointer"
-              title="Configure Twilio SID and Auth Token"
+              className="flex items-center gap-1.5 px-3 py-2.5 rounded-2xl bg-neutral-100/90 hover:bg-neutral-200/90 dark:bg-neutral-800/80 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 text-xs font-bold border border-neutral-200 dark:border-neutral-700 transition-colors cursor-pointer"
+              title="Configure Twilio SID, Auth Token & Line Numbers"
             >
               <Key className="w-4 h-4 text-neutral-500" />
-              <span>Twilio Line Config</span>
+              <span>Line Config</span>
               {showConfig ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
             </button>
           </div>
@@ -290,7 +345,7 @@ export const AssistanceDashboardPage: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 text-emerald-500" />
                   <span className="text-xs font-bold text-neutral-900 dark:text-white">
-                    Twilio Credentials & Cloud Carrier Gateway Parameters
+                    Twilio Credentials & Gateway Parameters
                   </span>
                 </div>
                 <span className="text-[10px] text-neutral-500">
@@ -305,7 +360,7 @@ export const AssistanceDashboardPage: React.FC = () => {
                 </div>
               )}
 
-              <form onSubmit={handleSaveCredentials} className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <form onSubmit={handleSaveCredentials} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                 <div>
                   <label className="block text-[10px] uppercase font-bold text-neutral-500 mb-1">
                     Twilio Account SID:
@@ -336,13 +391,27 @@ export const AssistanceDashboardPage: React.FC = () => {
 
                 <div>
                   <label className="block text-[10px] uppercase font-bold text-neutral-500 mb-1">
-                    Registered Mobile / Destination:
+                    Twilio Outbound Line:
+                  </label>
+                  <input
+                    type="text"
+                    value={inputTwilioPhone}
+                    onChange={e => setInputTwilioPhone(e.target.value)}
+                    className="w-full p-2.5 text-xs font-mono rounded-xl bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 text-neutral-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-neutral-400"
+                    placeholder="+17372508034"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-neutral-500 mb-1">
+                    Recipient Mobile:
                   </label>
                   <div className="flex gap-2">
                     <input
                       type="text"
-                      value={inputPhone}
-                      onChange={e => setInputPhone(e.target.value)}
+                      value={inputRegisteredPhone}
+                      onChange={e => setInputRegisteredPhone(e.target.value)}
                       className="w-full p-2.5 text-xs font-mono rounded-xl bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 text-neutral-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-neutral-400"
                       placeholder="+919180420603"
                       required
@@ -358,7 +427,7 @@ export const AssistanceDashboardPage: React.FC = () => {
               </form>
 
               <p className="text-[11px] text-neutral-500 leading-relaxed">
-                Note: Calls and SMS are dispatched directly to <strong>{registeredNumber}</strong> without prompts. For live carrier delivery via Twilio's cloud telephone network, ensure your 32-character Auth Token from the Twilio Console (separate from SID) is entered above.
+                Calls and SMS are dialed from Twilio number <strong>{fromPhone}</strong> directly to your personal phone <strong>{registeredNumber}</strong>. For live phone network delivery via Twilio carrier, paste your 32-character Auth Token from the Twilio Console (twilio.com/console).
               </p>
             </div>
           </div>
@@ -383,7 +452,7 @@ export const AssistanceDashboardPage: React.FC = () => {
                       Call Assistance
                     </h2>
                     <p className="text-[11px] text-neutral-500">
-                      Outbound Twilio voice call to {registeredNumber}
+                      Outbound Twilio call from <strong className="font-mono text-neutral-700 dark:text-neutral-300">{fromPhone}</strong> to <strong className="font-mono text-neutral-700 dark:text-neutral-300">{registeredNumber}</strong>
                     </p>
                   </div>
                 </div>
@@ -550,7 +619,7 @@ export const AssistanceDashboardPage: React.FC = () => {
                       SMS Alert
                     </h2>
                     <p className="text-[11px] text-neutral-500">
-                      Dispatched directly to {registeredNumber}
+                      Dispatched from Twilio <strong className="font-mono text-neutral-700 dark:text-neutral-300">{fromPhone}</strong> to <strong className="font-mono text-neutral-700 dark:text-neutral-300">{registeredNumber}</strong>
                     </p>
                   </div>
                 </div>

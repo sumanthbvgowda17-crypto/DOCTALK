@@ -36,7 +36,7 @@ const titleMap: Record<string, { title: string; subtitle: string }> = {
   },
   '/assistance': {
     title: 'Twilio Assistance Dashboard',
-    subtitle: 'Instant call assistance and priority SMS alerts to registered number (+91 9180420603)'
+    subtitle: 'Direct Twilio Voice (+17372508034) & SMS delivery to registered number (+91 9180420603)'
   },
   '/communications': {
     title: 'Communications & Twilio SMS Hub',
