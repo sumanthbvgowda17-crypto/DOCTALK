@@ -32,6 +32,12 @@ export const formatPhoneNumber = (phone: string): string => {
   if (!cleaned) return phone;
   if (cleaned.startsWith('+')) return cleaned;
   if (cleaned.length === 10) {
+    return `+91${cleaned}`;
+  }
+  if (cleaned.length === 11 && cleaned.startsWith('0')) {
+    return `+91${cleaned.slice(1)}`;
+  }
+  if (cleaned.length === 12 && cleaned.startsWith('91')) {
     return `+${cleaned}`;
   }
   return `+${cleaned}`;
@@ -42,21 +48,27 @@ export const DEFAULT_USER_PHONE = '+919180420603';
 
 export const getTwilioConfig = () => {
   const accountSid = localStorage.getItem('doctalk_twilio_account_sid') || import.meta.env.VITE_TWILIO_ACCOUNT_SID || '';
-  const authToken = localStorage.getItem('doctalk_twilio_auth_token') || import.meta.env.VITE_TWILIO_AUTH_TOKEN || '';
+  
+  let authToken: string = localStorage.getItem('doctalk_twilio_auth_token') || '';
+  if (authToken === accountSid) {
+    localStorage.removeItem('doctalk_twilio_auth_token');
+    authToken = '';
+  }
+  authToken = authToken || import.meta.env.VITE_TWILIO_AUTH_TOKEN || '';
 
   // Clean up any old erroneously saved Indian destination number as the Twilio caller ID
   let storedTwilioPhone = localStorage.getItem('doctalk_twilio_phone');
-  if (storedTwilioPhone === '+919180420603' || storedTwilioPhone === '9180420603') {
+  if (storedTwilioPhone && (storedTwilioPhone.includes('9180420603') || storedTwilioPhone.startsWith('+91'))) {
     localStorage.removeItem('doctalk_twilio_phone');
     storedTwilioPhone = null;
   }
 
   const rawPhone = storedTwilioPhone || import.meta.env.VITE_TWILIO_PHONE_NUMBER || DEFAULT_TWILIO_PHONE;
-  const fromPhone = rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`;
+  const fromPhone = formatPhoneNumber(rawPhone);
 
   // User's registered number that receives the call and SMS
   const rawRegisteredPhone = localStorage.getItem('doctalk_twilio_registered_phone') || import.meta.env.VITE_USER_PHONE_NUMBER || DEFAULT_USER_PHONE;
-  const registeredNumber = rawRegisteredPhone.startsWith('+') ? rawRegisteredPhone : `+${rawRegisteredPhone}`;
+  const registeredNumber = formatPhoneNumber(rawRegisteredPhone);
 
   // Real carrier mode is active when auth token is distinct from account SID
   const isCarrierMode = Boolean(authToken && authToken !== accountSid && authToken.length >= 20);
@@ -263,6 +275,7 @@ export const makeTwilioCall = async ({ to, speechText }: MakeCallParams): Promis
   formData.append('To', targetNumber);
   formData.append('From', fromPhone);
   formData.append('Twiml', twimlXml);
+  formData.append('speechText', messageToSpeak);
   formData.append('AccountSid', accountSid);
   formData.append('AuthToken', authToken);
 

@@ -1,7 +1,8 @@
 import react from '@vitejs/plugin-react'
-import { defineConfig, type Plugin } from 'vite'
+import { defineConfig, loadEnv, type Plugin } from 'vite'
 
 function twilioDirectPlugin(): Plugin {
+  const env = loadEnv('development', process.cwd(), '');
   return {
     name: 'twilio-direct-handler',
     configureServer(server) {
@@ -49,13 +50,25 @@ function twilioDirectPlugin(): Plugin {
               if (!params.has(k)) params.append(k, v);
             });
 
+            const formatE164 = (phone: string): string => {
+              const cleaned = (phone || '').replace(/[^\d+]/g, '');
+              if (!cleaned) return phone;
+              if (cleaned.startsWith('+')) return cleaned;
+              if (cleaned.length === 10) return `+91${cleaned}`;
+              if (cleaned.length === 11 && cleaned.startsWith('0')) return `+91${cleaned.slice(1)}`;
+              if (cleaned.length === 12 && cleaned.startsWith('91')) return `+${cleaned}`;
+              return `+${cleaned}`;
+            };
+
             const mode = params.get('mode') || (req.url?.includes('Calls') || req.url?.includes('call') ? 'call' : 'sms');
-            const to = params.get('To') || process.env.VITE_USER_PHONE_NUMBER || '+919180420603';
-            const from = params.get('From') || process.env.VITE_TWILIO_PHONE_NUMBER || '+17372508034';
+            const rawTo = params.get('To') || env.VITE_USER_PHONE_NUMBER || process.env.VITE_USER_PHONE_NUMBER || '+919180420603';
+            const rawFrom = params.get('From') || env.VITE_TWILIO_PHONE_NUMBER || process.env.VITE_TWILIO_PHONE_NUMBER || '+17372508034';
+            const to = formatE164(rawTo);
+            const from = formatE164(rawFrom);
             const body = params.get('Body') || 'DocTalk Emergency Assistance Alert';
-            const twiml = params.get('Twiml') || '<Response><Say voice="alice" language="en-IN">DocTalk Emergency Medical Assistance. Connecting you with Dr. Anita Rao.</Say></Response>';
-            const accountSid = params.get('AccountSid') || process.env.VITE_TWILIO_ACCOUNT_SID || '';
-            const authToken = params.get('AuthToken') || process.env.VITE_TWILIO_AUTH_TOKEN || '';
+            const speechText = params.get('speechText') || params.get('Body') || 'DocTalk Emergency Medical Assistance. Connecting you with Dr. Anita Rao. Please hold the line.';
+            const accountSid = params.get('AccountSid') || env.VITE_TWILIO_ACCOUNT_SID || process.env.VITE_TWILIO_ACCOUNT_SID || '';
+            const authToken = params.get('AuthToken') || env.VITE_TWILIO_AUTH_TOKEN || process.env.VITE_TWILIO_AUTH_TOKEN || '';
 
             let twilioSuccess = false;
             let twilioSid = '';
@@ -75,8 +88,11 @@ function twilioDirectPlugin(): Plugin {
                   const twilioForm = new URLSearchParams();
                   twilioForm.append('To', to);
                   twilioForm.append('From', from);
+
                   if (mode === 'call') {
-                    twilioForm.append('Twiml', twiml);
+                    // Twimlets dynamic voice message URL (fully compatible with Twilio trial & upgraded accounts)
+                    const twimletUrl = `http://twimlets.com/message?Message%5B0%5D=${encodeURIComponent(speechText)}`;
+                    twilioForm.append('Url', twimletUrl);
                   } else {
                     twilioForm.append('Body', body);
                   }
@@ -97,7 +113,11 @@ function twilioDirectPlugin(): Plugin {
                     twilioStatus = data.status;
                   } else {
                     const errData = (await twilioRes.json().catch(() => ({}))) as any;
-                    twilioErrorNotice = errData.message || `Twilio error status ${twilioRes.status}`;
+                    if (errData.code === 572006) {
+                      twilioErrorNotice = 'Twilio Trial Account Notice (Code 572006): Free trial accounts require an upgraded balance to send custom SMS to international (+91) numbers. Use Direct Device SMS for instant dispatch, or upgrade your Twilio account to enable live carrier SMS.';
+                    } else {
+                      twilioErrorNotice = errData.message || `Twilio error status ${twilioRes.status}`;
+                    }
                   }
                 } catch (err: any) {
                   twilioErrorNotice = err?.message || 'Twilio connection error';
